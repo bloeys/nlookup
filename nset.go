@@ -1,10 +1,12 @@
 package nset
 
 import (
+	"bytes"
 	"fmt"
 	"math/bits"
 	"reflect"
 	"strings"
+	"unsafe"
 )
 
 var _ fmt.Stringer = &NSet[uint8]{}
@@ -13,14 +15,18 @@ type BucketType uint8
 type StorageType uint64
 
 const (
-	BucketCount        = 128
+	BucketCount = 128
+	// StorageTypeBits is the number of bits used per storage unit in each bucket.
+	//
+	// NOTE: this must be a power of 2, otherwise FastModPower2 will break and must be replaced by a normal x%y
+	// NOTE: GetStorageUnitIndex must be adjusted if this value is changed
 	StorageTypeBits    = 64
 	BucketIndexingBits = 7
 )
 
-//IntsIf is limited to uint32 because we can store ALL 4 Billion uint32 numbers
-//in 512MB with NSet (instead of the normal 16GB for an array of all uint32s).
-//But if we allow uint64 (or int, since int can be 64-bit) users can easily put a big 64-bit number and use more RAM than maybe Google and crash.
+// IntsIf is limited to uint32 because we can store ALL 4 Billion uint32 numbers
+// in 512MB with NSet (instead of the normal 16GB for an array of all uint32s).
+// But if we allow uint64 (or int, since int can be 64-bit) users can easily put a big 64-bit number and use more RAM than maybe Google and crash.
 type IntsIf interface {
 	uint8 | uint16 | uint32
 }
@@ -35,6 +41,7 @@ type NSet[T IntsIf] struct {
 	//StorageUnitCount the number of uint64 integers that are used to indicate presence of numbers in the set
 	StorageUnitCount uint32
 	shiftAmount      T
+	SetBits          uint64
 }
 
 func (n *NSet[T]) Add(x T) {
@@ -51,7 +58,11 @@ func (n *NSet[T]) Add(x T) {
 		bucket.StorageUnitCount += storageUnitsToAdd
 	}
 
-	bucket.Data[unitIndex] |= n.GetBitMask(x)
+	oldStorage := bucket.Data[unitIndex]
+	newStorage := oldStorage | n.GetBitMask(x)
+
+	bucket.Data[unitIndex] = newStorage
+	n.SetBits += uint64(bits.OnesCount64(uint64(^oldStorage) & uint64(newStorage)))
 }
 
 func (n *NSet[T]) AddMany(values ...T) {
@@ -71,9 +82,12 @@ func (n *NSet[T]) AddMany(values ...T) {
 			bucket.StorageUnitCount += storageUnitsToAdd
 		}
 
-		bucket.Data[unitIndex] |= n.GetBitMask(x)
-	}
+		oldStorage := bucket.Data[unitIndex]
+		newStorage := oldStorage | n.GetBitMask(x)
 
+		bucket.Data[unitIndex] = newStorage
+		n.SetBits += uint64(bits.OnesCount64(uint64(^oldStorage) & uint64(newStorage)))
+	}
 }
 
 func (n *NSet[T]) Remove(x T) {
@@ -84,7 +98,11 @@ func (n *NSet[T]) Remove(x T) {
 		return
 	}
 
-	b.Data[unitIndex] ^= n.GetBitMask(x)
+	oldStorage := b.Data[unitIndex]
+	newStorage := oldStorage &^ n.GetBitMask(x)
+
+	b.Data[unitIndex] = newStorage
+	n.SetBits -= uint64(bits.OnesCount64(uint64(oldStorage) & uint64(^newStorage)))
 }
 
 func (n *NSet[T]) Contains(x T) bool {
@@ -129,16 +147,22 @@ func (n *NSet[T]) GetBucketIndex(x T) BucketType {
 }
 
 func (n *NSet[T]) GetStorageUnitIndex(x T) uint32 {
+
 	//The top 'n' bits are used to select the bucket so we need to remove them before finding storage
 	//unit and bit mask. This is done by shifting left by 4 which removes the top 'n' bits,
 	//then shifting right by 4 which puts the bits back to their original place, but now
 	//the top 'n' bits are zeros.
-	return uint32(((x << BucketIndexingBits) >> BucketIndexingBits) / StorageTypeBits)
+
+	// Since StorageTypeBits is known and is a power of 2, we can replace the division
+	// with a right shift.
+	//
+	// The below return is equal to: return uint32(((x << BucketIndexingBits) >> BucketIndexingBits) / StorageTypeBits)
+	return uint32(((x << BucketIndexingBits) >> BucketIndexingBits) >> 6)
 }
 
 func (n *NSet[T]) GetBitMask(x T) StorageType {
 	//Removes top 'n' bits
-	return 1 << (((x << BucketIndexingBits) >> BucketIndexingBits) % StorageTypeBits)
+	return 1 << FastModPower2(((x<<BucketIndexingBits)>>BucketIndexingBits), StorageTypeBits)
 }
 
 func (n *NSet[T]) Union(otherSet *NSet[T]) {
@@ -158,7 +182,12 @@ func (n *NSet[T]) Union(otherSet *NSet[T]) {
 		}
 
 		for j := 0; j < len(b1.Data) && j < len(b2.Data); j++ {
-			b1.Data[j] |= b2.Data[j]
+
+			oldStorage := b1.Data[j]
+			newStorage := oldStorage | b2.Data[j]
+
+			b1.Data[j] = newStorage
+			n.SetBits += uint64(bits.OnesCount64(uint64(^oldStorage) & uint64(newStorage)))
 		}
 	}
 }
@@ -187,19 +216,26 @@ func (n *NSet[T]) GetIntersection(otherSet *NSet[T]) *NSet[T] {
 				outSet.StorageUnitCount += storageUnitsToAdd
 			}
 
-			newB.Data[j] = b1.Data[j] & b2.Data[j]
+			newStorage := b1.Data[j] & b2.Data[j]
+			newB.Data[j] = newStorage
+			outSet.SetBits += uint64(bits.OnesCount64(uint64(newStorage)))
 		}
 	}
 
 	return outSet
 }
 
-//GetAllElements returns all the added numbers added to NSet.
-//NOTE: Be careful with this if you have a lot of elements in NSet because NSet is compressed while the returned array is not.
-//In the worst case (all uint32s stored) the returned array will be ~4.2 billion elements and will use 16+ GBs of RAM.
+// GetAllElements returns all the added numbers added to NSet.
+//
+// NOTE: Be careful with this if you have a lot of elements in NSet because NSet is compressed while the returned array is not.
+// In the worst case (all uint32s stored) the returned array will be ~4.2 billion elements and will use 16+ GBs of RAM.
 func (n *NSet[T]) GetAllElements() []T {
 
-	elements := make([]T, 0)
+	elements := make([]T, 0, n.SetBits)
+
+	if n.SetBits == 0 {
+		return elements
+	}
 
 	for i := 0; i < BucketCount; i++ {
 
@@ -211,11 +247,11 @@ func (n *NSet[T]) GetAllElements() []T {
 		for j := 0; j < len(b1.Data); j++ {
 
 			storageUnit := b1.Data[j]
-			onesCount := bits.OnesCount64(uint64(storageUnit))
-			if onesCount == 0 {
+			if storageUnit == 0 {
 				continue
 			}
-			elementsToAdd := make([]T, 0, onesCount)
+
+			onesCount := bits.OnesCount64(uint64(storageUnit))
 
 			mask := StorageType(1 << 0)                                     //This will be used to check set bits. Numbers will be reconstructed only for set bits
 			firstStorageUnitValue := T(j*StorageTypeBits) | bucketIndexBits //StorageUnitIndex = noBucketBitsX / StorageTypeBits. So: noBucketBitsX = StorageUnitIndex * StorageTypeBits; Then: x = noBucketBitsX | bucketIndexBits
@@ -223,14 +259,12 @@ func (n *NSet[T]) GetAllElements() []T {
 			for k := T(0); onesCount > 0 && k < StorageTypeBits; k++ {
 
 				if storageUnit&mask > 0 {
-					elementsToAdd = append(elementsToAdd, firstStorageUnitValue+k)
+					elements = append(elements, firstStorageUnitValue+k)
 					onesCount--
 				}
 
 				mask <<= 1
 			}
-
-			elements = append(elements, elementsToAdd...)
 		}
 	}
 
@@ -239,7 +273,7 @@ func (n *NSet[T]) GetAllElements() []T {
 
 func (n *NSet[T]) IsEq(otherSet *NSet[T]) bool {
 
-	if n.StorageUnitCount != otherSet.StorageUnitCount {
+	if n.SetBits != otherSet.SetBits {
 		return false
 	}
 
@@ -255,11 +289,16 @@ func (n *NSet[T]) IsEq(otherSet *NSet[T]) bool {
 		b1 := &n.Buckets[i]
 		b2 := &otherSet.Buckets[i]
 
-		for j := 0; j < len(b1.Data); j++ {
+		// The .Data[0] will panic if either unit count is zero, so these checks
+		// both avoid that panic and provide an early exit
+		bucketsEqual := (b1.StorageUnitCount == 0 && b2.StorageUnitCount == 0) ||
+			(b1.StorageUnitCount == b2.StorageUnitCount && bytes.Equal(
+				unsafe.Slice((*byte)(unsafe.Pointer(&b1.Data[0])), len(b1.Data)*int(unsafe.Sizeof(b1.Data[0]))),
+				unsafe.Slice((*byte)(unsafe.Pointer(&b2.Data[0])), len(b2.Data)*int(unsafe.Sizeof(b2.Data[0]))),
+			))
 
-			if b1.Data[j] != b2.Data[j] {
-				return false
-			}
+		if !bucketsEqual {
+			return false
 		}
 	}
 
@@ -284,7 +323,7 @@ func (n *NSet[T]) HasIntersection(otherSet *NSet[T]) bool {
 	return false
 }
 
-//String returns a string of the storage as bytes separated by spaces. A comma is between each storage unit
+// String returns a string of the storage as bytes separated by spaces. A comma is between each storage unit
 func (n *NSet[T]) String() string {
 
 	b := strings.Builder{}
@@ -334,9 +373,20 @@ func (n *NSet[T]) Copy() *NSet[T] {
 
 }
 
+// Len returns the number of values stored (i.e. bits set to 1).
+// It is the same as NSet.SetBits.
+func (n *NSet[T]) Len() uint64 {
+	return n.SetBits
+}
+
 func UnionSets[T IntsIf](set1, set2 *NSet[T]) *NSet[T] {
 
 	newSet := NewNSet[T]()
+
+	// This is an optimization that makes it so that we only need to count bits
+	// when doing union with set2
+	newSet.SetBits = set1.SetBits
+
 	for i := 0; i < BucketCount; i++ {
 
 		b1 := &set1.Buckets[i]
@@ -355,16 +405,24 @@ func UnionSets[T IntsIf](set1, set2 *NSet[T]) *NSet[T] {
 		newSet.StorageUnitCount += bucketSize
 
 		//Union fields of both sets on the new set
-		for j := 0; j < len(b1.Data); j++ {
-			newB.Data[j] |= b1.Data[j]
-		}
+		copy(newB.Data, b1.Data)
 
 		for j := 0; j < len(b2.Data); j++ {
-			newB.Data[j] |= b2.Data[j]
+
+			oldStorage := newB.Data[j]
+			newStorage := oldStorage | b2.Data[j]
+
+			newB.Data[j] = newStorage
+			newSet.SetBits += uint64(bits.OnesCount64(uint64(^oldStorage) & uint64(newStorage)))
 		}
 	}
 
 	return newSet
+}
+
+// FastModPower2 is a fast version of x%y that only works when y is a power of 2
+func FastModPower2[T uint8 | uint16 | uint32 | uint64](x, y T) T {
+	return x & (y - 1)
 }
 
 func NewNSet[T IntsIf]() *NSet[T] {

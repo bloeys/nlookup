@@ -22,10 +22,23 @@ var (
 func TestNSet(t *testing.T) {
 
 	n1 := nset.NewNSet[uint32]()
+
+	// Double add/remove of the same value is not only important to test SetBits, but also
+	// to test for bugs where double adding/removing incorrectly flips bits (checked using Contains())
 	n1.Add(0)
+	AllTrue(t, n1.Len() == 1)
+
+	n1.Add(0)
+	AllTrue(t, n1.Len() == 1)
+
 	n1.Add(1)
+	AllTrue(t, n1.Len() == 2)
+
 	n1.Add(63)
+	AllTrue(t, n1.Len() == 3)
+
 	n1.Add(math.MaxUint32)
+	AllTrue(t, n1.Len() == 4)
 
 	AllTrue(t, n1.Contains(0), n1.Contains(1), n1.Contains(63), n1.Contains(math.MaxUint32), !n1.Contains(10), !n1.Contains(599))
 	AllTrue(t, n1.ContainsAll(0, 1, 63), !n1.ContainsAll(9, 0, 1), !n1.ContainsAll(0, 1, 63, 99))
@@ -35,7 +48,12 @@ func TestNSet(t *testing.T) {
 	IsEq(t, math.MaxUint32/64/nset.BucketCount, n1.GetStorageUnitIndex(math.MaxUint32))
 
 	nCopy := n1.Copy()
+
 	n1.Remove(1)
+	AllTrue(t, n1.Len() == 3)
+
+	n1.Remove(1)
+	AllTrue(t, n1.Len() == 3)
 
 	AllTrue(t, n1.Contains(0), n1.Contains(63), !n1.Contains(1), nCopy.ContainsAll(0, 1, 63, math.MaxUint32))
 
@@ -59,25 +77,25 @@ func TestNSet(t *testing.T) {
 	n4n5Twin := nset.NewNSet[uint32]()
 	n4n5Twin.AddMany(0, 1, 64, math.MaxUint32)
 
-	AllTrue(t, n4n5.ContainsAll(0, 1, 64, math.MaxUint32), !n4n5.Contains(63), n4n5Twin.IsEq(n4n5))
+	AllTrue(t, n4n5.Len() == 4, n4n5.Len() == n4n5Twin.Len(), n4n5.ContainsAll(0, 1, 64, math.MaxUint32), !n4n5.Contains(63), n4n5Twin.IsEq(n4n5))
 
 	//Union
 	n6 := nset.NewNSet[uint32]()
-	n6.AddMany(4, 7, 100, 1000)
+	n6.AddMany(1, 4, 7, 100, 1000)
 
 	n7 := nset.NewNSet[uint32]()
-	n7.AddMany(math.MaxUint32)
+	n7.AddMany(1, math.MaxUint32)
 	n7OldStorageUnitCount := n7.StorageUnitCount
 	n7.Union(n6)
 
-	AllTrue(t, n6.ContainsAll(4, 7, 100, 1000), !n6.Contains(math.MaxUint32), n7.ContainsAll(4, 7, 100, 1000, math.MaxUint32), n7.StorageUnitCount == n7OldStorageUnitCount+n6.StorageUnitCount)
+	AllTrue(t, n6.Len() == 5, n7.Len() == 6, n6.ContainsAll(1, 4, 7, 100, 1000), !n6.Contains(math.MaxUint32), n7.ContainsAll(1, 4, 7, 100, 1000, math.MaxUint32), n7.StorageUnitCount == n7OldStorageUnitCount+n6.StorageUnitCount-1)
 
 	//UnionSets
 	n7 = nset.NewNSet[uint32]()
-	n7.AddMany(math.MaxUint32)
+	n7.AddMany(4, math.MaxUint32)
 
 	unionedSet := nset.UnionSets(n6, n7)
-	AllTrue(t, !n6.Contains(math.MaxUint32), !n7.ContainsAny(4, 7, 100, 1000), unionedSet.ContainsAll(4, 7, 100, 1000, math.MaxUint32), unionedSet.StorageUnitCount == n6.StorageUnitCount+n7OldStorageUnitCount)
+	AllTrue(t, unionedSet.Len() == 6, !n6.Contains(math.MaxUint32), !n7.ContainsAny(7, 100, 1000), unionedSet.ContainsAll(4, 7, 100, 1000, math.MaxUint32), unionedSet.StorageUnitCount == n6.StorageUnitCount+n7OldStorageUnitCount-1)
 
 	//Equality
 	AllTrue(t, !n6.IsEq(n7))
@@ -109,6 +127,7 @@ func TestNSetFullRange(t *testing.T) {
 			}
 		}
 		fullRangeNSet.Add(math.MaxUint32)
+		AllTrue(t, fullRangeNSet.SetBits == math.MaxUint32+1)
 	}
 
 	n := fullRangeNSet
@@ -120,7 +139,7 @@ func TestNSetFullRange(t *testing.T) {
 
 		for j := 0; j < len(b.Data); j++ {
 			if b.Data[j] != math.MaxUint64 {
-				t.Errorf("Error: storage unit is NOT equal to MaxUint64 (i=%d,j=%d)! Expected math.MaxUint64 but got '%08b'\n",
+				t.Fatalf("Error: storage unit is NOT equal to MaxUint64 (i=%d,j=%d)! Expected math.MaxUint64 but got '%08b'\n",
 					i,
 					j,
 					b.Data[j])
@@ -130,15 +149,18 @@ func TestNSetFullRange(t *testing.T) {
 
 }
 
-func AllTrue(t *testing.T, values ...bool) bool {
+func AllTrue(t *testing.T, values ...bool) (success bool) {
+
+	success = true
 
 	for i := 0; i < len(values); i++ {
 		if !values[i] {
-			t.Errorf("Expected 'true' but got 'false'\n")
+			t.Fatalf("Expected 'true' but got 'false'\n")
+			success = false
 		}
 	}
 
-	return true
+	return success
 }
 
 func IsEq[T comparable](t *testing.T, expected, val T) bool {
@@ -147,7 +169,7 @@ func IsEq[T comparable](t *testing.T, expected, val T) bool {
 		return true
 	}
 
-	t.Errorf("Expected '%v' but got '%v'\n", expected, val)
+	t.Fatalf("Expected '%v' but got '%v'\n", expected, val)
 	return false
 }
 
@@ -173,7 +195,7 @@ func BenchmarkNSetAddRand(b *testing.B) {
 
 	n := nset.NewNSet[uint32]()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 		n.Add(rand.Uint32() % maxBenchSize)
 	}
@@ -183,7 +205,7 @@ func BenchmarkNSetAddRandNoSizeLimit(b *testing.B) {
 
 	n := nset.NewNSet[uint32]()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 		n.Add(rand.Uint32())
 	}
@@ -193,7 +215,7 @@ func BenchmarkMapAddRand(b *testing.B) {
 
 	hMap := map[uint32]struct{}{}
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 		hMap[rand.Uint32()%maxBenchSize] = struct{}{}
 	}
@@ -256,7 +278,7 @@ func BenchmarkNSetContainsRand(b *testing.B) {
 
 	//Work
 	found := 0
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -289,7 +311,7 @@ func BenchmarkNSetContainsRandFullRange(b *testing.B) {
 
 	//Work
 	found := 0
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -314,7 +336,7 @@ func BenchmarkMapContainsRand(b *testing.B) {
 
 	//Work
 	found := 0
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -372,7 +394,7 @@ func BenchmarkNSetDeleteRand(b *testing.B) {
 	b.StartTimer()
 
 	//Work
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -392,7 +414,7 @@ func BenchmarkMapDeleteRand(b *testing.B) {
 	b.StartTimer()
 
 	//Work
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -451,7 +473,7 @@ func BenchmarkNSetIsEqRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < maxBenchSize; i++ {
@@ -470,7 +492,7 @@ func BenchmarkMapIsEqRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
 	for i := uint32(0); i < maxBenchSize; i++ {
@@ -504,7 +526,7 @@ func BenchmarkNSetIsEqRand100Mil(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < 100_000_000; i++ {
@@ -523,7 +545,7 @@ func BenchmarkMapIsEqRand100Mil(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
 	for i := uint32(0); i < 100_000_000; i++ {
@@ -606,7 +628,7 @@ func BenchmarkNSetGetIntersectionRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
@@ -627,7 +649,7 @@ func BenchmarkMapGetIntersectionRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
@@ -709,7 +731,7 @@ func BenchmarkNSetGetAllElementsRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	s1 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < maxBenchSize; i++ {
 		s1.Add(rand.Uint32())
@@ -728,7 +750,7 @@ func BenchmarkMapGetAllElementsRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 
 	m1 := map[uint32]struct{}{}
 	for i := uint32(0); i < maxBenchSize; i++ {
@@ -814,12 +836,12 @@ func BenchmarkNSetUnionRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	randGen := rand.New(rand.NewSource(RandSeed))
 
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < maxBenchSize; i++ {
-		r := rand.Uint32()
+		r := randGen.Uint32()
 		s1.Add(r)
 		s2.Add(r)
 	}
@@ -837,12 +859,12 @@ func BenchmarkMapUnionRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	randGen := rand.New(rand.NewSource(RandSeed))
 
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
 	for i := uint32(0); i < maxBenchSize; i++ {
-		r := rand.Uint32()
+		r := randGen.Uint32()
 		m1[r] = struct{}{}
 		m2[r] = struct{}{}
 	}
