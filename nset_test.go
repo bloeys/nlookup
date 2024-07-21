@@ -127,6 +127,7 @@ func TestNSetFullRange(t *testing.T) {
 			}
 		}
 		fullRangeNSet.Add(math.MaxUint32)
+		AllTrue(t, fullRangeNSet.SetBits == math.MaxUint32+1)
 	}
 
 	n := fullRangeNSet
@@ -138,7 +139,7 @@ func TestNSetFullRange(t *testing.T) {
 
 		for j := 0; j < len(b.Data); j++ {
 			if b.Data[j] != math.MaxUint64 {
-				t.Errorf("Error: storage unit is NOT equal to MaxUint64 (i=%d,j=%d)! Expected math.MaxUint64 but got '%08b'\n",
+				t.Fatalf("Error: storage unit is NOT equal to MaxUint64 (i=%d,j=%d)! Expected math.MaxUint64 but got '%08b'\n",
 					i,
 					j,
 					b.Data[j])
