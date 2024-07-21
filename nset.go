@@ -289,10 +289,13 @@ func (n *NSet[T]) IsEq(otherSet *NSet[T]) bool {
 		b1 := &n.Buckets[i]
 		b2 := &otherSet.Buckets[i]
 
-		bucketsEqual := (b1.StorageUnitCount == 0 && b2.StorageUnitCount == 0) || bytes.Equal(
-			unsafe.Slice((*byte)(unsafe.Pointer(&b1.Data[0])), len(b1.Data)*int(unsafe.Sizeof(b1.Data[0]))),
-			unsafe.Slice((*byte)(unsafe.Pointer(&b2.Data[0])), len(b2.Data)*int(unsafe.Sizeof(b2.Data[0]))),
-		)
+		// The .Data[0] will panic if either unit count is zero, so these checks
+		// both avoid that panic and provide an early exit
+		bucketsEqual := (b1.StorageUnitCount == 0 && b2.StorageUnitCount == 0) ||
+			(b1.StorageUnitCount == b2.StorageUnitCount && bytes.Equal(
+				unsafe.Slice((*byte)(unsafe.Pointer(&b1.Data[0])), len(b1.Data)*int(unsafe.Sizeof(b1.Data[0]))),
+				unsafe.Slice((*byte)(unsafe.Pointer(&b2.Data[0])), len(b2.Data)*int(unsafe.Sizeof(b2.Data[0]))),
+			))
 
 		if !bucketsEqual {
 			return false
