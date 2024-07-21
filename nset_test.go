@@ -195,7 +195,7 @@ func BenchmarkNSetAddRand(b *testing.B) {
 
 	n := nset.NewNSet[uint32]()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 		n.Add(rand.Uint32() % maxBenchSize)
 	}
@@ -205,7 +205,7 @@ func BenchmarkNSetAddRandNoSizeLimit(b *testing.B) {
 
 	n := nset.NewNSet[uint32]()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 		n.Add(rand.Uint32())
 	}
@@ -215,7 +215,7 @@ func BenchmarkMapAddRand(b *testing.B) {
 
 	hMap := map[uint32]struct{}{}
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 		hMap[rand.Uint32()%maxBenchSize] = struct{}{}
 	}
@@ -278,7 +278,7 @@ func BenchmarkNSetContainsRand(b *testing.B) {
 
 	//Work
 	found := 0
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -311,7 +311,7 @@ func BenchmarkNSetContainsRandFullRange(b *testing.B) {
 
 	//Work
 	found := 0
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -336,7 +336,7 @@ func BenchmarkMapContainsRand(b *testing.B) {
 
 	//Work
 	found := 0
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -394,7 +394,7 @@ func BenchmarkNSetDeleteRand(b *testing.B) {
 	b.StartTimer()
 
 	//Work
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -414,7 +414,7 @@ func BenchmarkMapDeleteRand(b *testing.B) {
 	b.StartTimer()
 
 	//Work
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	for i := 0; i < b.N; i++ {
 
 		randVal := rand.Uint32()
@@ -473,7 +473,7 @@ func BenchmarkNSetIsEqRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < maxBenchSize; i++ {
@@ -492,7 +492,7 @@ func BenchmarkMapIsEqRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
 	for i := uint32(0); i < maxBenchSize; i++ {
@@ -526,7 +526,7 @@ func BenchmarkNSetIsEqRand100Mil(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < 100_000_000; i++ {
@@ -545,7 +545,7 @@ func BenchmarkMapIsEqRand100Mil(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
 	for i := uint32(0); i < 100_000_000; i++ {
@@ -628,7 +628,7 @@ func BenchmarkNSetGetIntersectionRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 
 	s1 := nset.NewNSet[uint32]()
 	s2 := nset.NewNSet[uint32]()
@@ -649,7 +649,7 @@ func BenchmarkMapGetIntersectionRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 
 	m1 := map[uint32]struct{}{}
 	m2 := map[uint32]struct{}{}
@@ -731,7 +731,7 @@ func BenchmarkNSetGetAllElementsRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 	s1 := nset.NewNSet[uint32]()
 	for i := uint32(0); i < maxBenchSize; i++ {
 		s1.Add(rand.Uint32())
@@ -750,7 +750,7 @@ func BenchmarkMapGetAllElementsRand(b *testing.B) {
 
 	b.StopTimer()
 
-	rand.Seed(RandSeed)
+	rand := rand.New(rand.NewSource(RandSeed))
 
 	m1 := map[uint32]struct{}{}
 	for i := uint32(0); i < maxBenchSize; i++ {
