@@ -126,7 +126,7 @@ func TestNSet(t *testing.T) {
 
 	nDiff1.AddMany(1, 2, 3, 4, 5, math.MaxUint32)
 	nDiff3 = nDiff1.GetDifference(nDiff2)
-	AllTrue(t, nDiff3.SetBits == 2, nDiff3.ContainsAll(2, 5, math.MaxUint32), !nDiff3.ContainsAny(1, 3, 4))
+	AllTrue(t, nDiff3.SetBits == 3, nDiff3.ContainsAll(2, 5, math.MaxUint32), !nDiff3.ContainsAny(1, 3, 4))
 }
 
 func TestNSetFullRange(t *testing.T) {

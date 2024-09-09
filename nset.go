@@ -257,7 +257,13 @@ func (n *NSet[T]) GetDifference(otherSet *NSet[T]) *NSet[T] {
 		}
 
 		if b1.StorageUnitCount > b2.StorageUnitCount {
+
 			copy(newB.Data[b2.StorageUnitCount:], b1.Data[b2.StorageUnitCount:])
+			for j := uint32(b2.StorageUnitCount); j < newB.StorageUnitCount; j++ {
+
+				storage := newB.Data[j]
+				outSet.SetBits += uint64(bits.OnesCount64(uint64(storage)))
+			}
 		}
 	}
 
