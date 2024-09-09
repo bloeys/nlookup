@@ -57,7 +57,7 @@ func TestNSet(t *testing.T) {
 
 	AllTrue(t, n1.Contains(0), n1.Contains(63), !n1.Contains(1), nCopy.ContainsAll(0, 1, 63, math.MaxUint32))
 
-	//Intersections
+	// Intersections
 	n2 := nset.NewNSet[uint32]()
 	n2.AddMany(1000, 63, 5, 10)
 
@@ -79,7 +79,7 @@ func TestNSet(t *testing.T) {
 
 	AllTrue(t, n4n5.Len() == 4, n4n5.Len() == n4n5Twin.Len(), n4n5.ContainsAll(0, 1, 64, math.MaxUint32), !n4n5.Contains(63), n4n5Twin.IsEq(n4n5))
 
-	//Union
+	// Union
 	n6 := nset.NewNSet[uint32]()
 	n6.AddMany(1, 4, 7, 100, 1000)
 
@@ -90,14 +90,14 @@ func TestNSet(t *testing.T) {
 
 	AllTrue(t, n6.Len() == 5, n7.Len() == 6, n6.ContainsAll(1, 4, 7, 100, 1000), !n6.Contains(math.MaxUint32), n7.ContainsAll(1, 4, 7, 100, 1000, math.MaxUint32), n7.StorageUnitCount == n7OldStorageUnitCount+n6.StorageUnitCount-1)
 
-	//UnionSets
+	// UnionSets
 	n7 = nset.NewNSet[uint32]()
 	n7.AddMany(4, math.MaxUint32)
 
 	unionedSet := nset.UnionSets(n6, n7)
 	AllTrue(t, unionedSet.Len() == 6, !n6.Contains(math.MaxUint32), !n7.ContainsAny(7, 100, 1000), unionedSet.ContainsAll(4, 7, 100, 1000, math.MaxUint32), unionedSet.StorageUnitCount == n6.StorageUnitCount+n7OldStorageUnitCount-1)
 
-	//Equality
+	// Equality
 	AllTrue(t, !n6.IsEq(n7))
 
 	n7.Union(n6)
@@ -106,12 +106,27 @@ func TestNSet(t *testing.T) {
 	n6.Union(n7)
 	AllTrue(t, n6.IsEq(n7))
 
-	//GetAllElements
+	// GetAllElements
 	n8 := nset.NewNSet[uint32]()
 	n8.AddMany(0, 1, 55, 1000, 10000)
 
 	n8Elements := n8.GetAllElements()
 	AllTrue(t, len(n8Elements) == 5, n8Elements[0] == 0, n8Elements[1] == 1, n8Elements[2] == 55, n8Elements[3] == 1000, n8Elements[4] == 10000)
+
+	// GetDifference
+	nDiff1 := nset.NewNSet[uint32]()
+	nDiff1.AddMany(1, 2, 3)
+
+	nDiff2 := nset.NewNSet[uint32]()
+	nDiff2.AddMany(1, 3, 4)
+
+	nDiff3 := nDiff1.GetDifference(nDiff2)
+
+	AllTrue(t, nDiff3.SetBits == 1, nDiff3.StorageUnitCount == 1, nDiff3.Contains(2), !nDiff3.ContainsAny(1, 3, 4))
+
+	nDiff1.AddMany(1, 2, 3, 4, 5, math.MaxUint32)
+	nDiff3 = nDiff1.GetDifference(nDiff2)
+	AllTrue(t, nDiff3.SetBits == 2, nDiff3.ContainsAll(2, 5, math.MaxUint32), !nDiff3.ContainsAny(1, 3, 4))
 }
 
 func TestNSetFullRange(t *testing.T) {
@@ -151,16 +166,14 @@ func TestNSetFullRange(t *testing.T) {
 
 func AllTrue(t *testing.T, values ...bool) (success bool) {
 
-	success = true
-
 	for i := 0; i < len(values); i++ {
 		if !values[i] {
 			t.Fatalf("Expected 'true' but got 'false'\n")
-			success = false
+			return false
 		}
 	}
 
-	return success
+	return true
 }
 
 func IsEq[T comparable](t *testing.T, expected, val T) bool {

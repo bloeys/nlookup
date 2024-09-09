@@ -165,6 +165,8 @@ func (n *NSet[T]) GetBitMask(x T) StorageType {
 	return 1 << FastModPower2(((x<<BucketIndexingBits)>>BucketIndexingBits), StorageTypeBits)
 }
 
+// Union does n1=Union(n1, n2), so the current set will be updated
+// such that its a union of its old value and the passed set
 func (n *NSet[T]) Union(otherSet *NSet[T]) {
 
 	for i := 0; i < BucketCount; i++ {
@@ -192,6 +194,8 @@ func (n *NSet[T]) Union(otherSet *NSet[T]) {
 	}
 }
 
+// GetIntersection returns a new set that's the intersection between
+// this set and the passed set
 func (n *NSet[T]) GetIntersection(otherSet *NSet[T]) *NSet[T] {
 
 	outSet := NewNSet[T]()
@@ -219,6 +223,41 @@ func (n *NSet[T]) GetIntersection(otherSet *NSet[T]) *NSet[T] {
 			newStorage := b1.Data[j] & b2.Data[j]
 			newB.Data[j] = newStorage
 			outSet.SetBits += uint64(bits.OnesCount64(uint64(newStorage)))
+		}
+	}
+
+	return outSet
+}
+
+// GetDifference returns a new set that contains the elements in this set
+// that are not in the passed set.
+//
+// For example, if s1=(1,2,3,4,5) and s2=(1,3,4), the output is
+// s3=Diff(s1,s2)=(2,5)
+func (n *NSet[T]) GetDifference(otherSet *NSet[T]) *NSet[T] {
+
+	outSet := NewNSet[T]()
+
+	for i := 0; i < BucketCount; i++ {
+
+		b1 := &n.Buckets[i]
+		b2 := &otherSet.Buckets[i]
+
+		outSet.StorageUnitCount += b1.StorageUnitCount
+
+		newB := &outSet.Buckets[i]
+		newB.StorageUnitCount = b1.StorageUnitCount
+		newB.Data = make([]StorageType, newB.StorageUnitCount)
+
+		for j := uint32(0); j < b1.StorageUnitCount && j < b2.StorageUnitCount; j++ {
+
+			newStorage := b1.Data[j] & (^b2.Data[j])
+			newB.Data[j] = newStorage
+			outSet.SetBits += uint64(bits.OnesCount64(uint64(newStorage)))
+		}
+
+		if b1.StorageUnitCount > b2.StorageUnitCount {
+			copy(newB.Data[b2.StorageUnitCount:], b1.Data[b2.StorageUnitCount:])
 		}
 	}
 
